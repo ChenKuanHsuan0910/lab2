@@ -1,3 +1,5 @@
 *Zone.Identifier
 tests/build
 ubmark/build
+build/*
+!build/Makefile
