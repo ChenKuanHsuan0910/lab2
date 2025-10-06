@@ -9,6 +9,21 @@
 `include "imuldiv-IntMulIterative.v"
 `include "imuldiv-IntDivIterative.v"
 
+//------------------------------------------------------------------------------
+// Compatibility fallback: define MULH/MULHSU/MULHU func codes if header is old
+//------------------------------------------------------------------------------
+`ifndef IMULDIV_MULDIVREQ_MSG_FUNC_MULH
+  `define IMULDIV_MULDIVREQ_MSG_FUNC_MULH   3'd5
+`endif
+`ifndef IMULDIV_MULDIVREQ_MSG_FUNC_MULHSU
+  `define IMULDIV_MULDIVREQ_MSG_FUNC_MULHSU 3'd6
+`endif
+`ifndef IMULDIV_MULDIVREQ_MSG_FUNC_MULHU
+  `define IMULDIV_MULDIVREQ_MSG_FUNC_MULHU  3'd7
+`endif
+
+
+
 module imuldiv_IntMulDivIterative
 (
   input         clk,
@@ -29,7 +44,10 @@ module imuldiv_IntMulDivIterative
   // Input Select
   //----------------------------------------------------------------------
 
-  wire mulreq_val    = ( muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MUL )
+  wire mulreq_val    = ( muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MUL
+                     ||  muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MULH
+                     ||  muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MULHSU
+                     ||  muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MULHU )
                      &&  muldivreq_val && divreq_rdy;
 
   wire divreq_val    = ( muldivreq_msg_fn != `IMULDIV_MULDIVREQ_MSG_FUNC_MUL )
@@ -37,6 +55,14 @@ module imuldiv_IntMulDivIterative
 
   wire divreq_msg_fn = ( muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_DIV
                      ||  muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_REM );
+
+  // Signedness controls for multiplier (for MUL/MULH/MULHSU/MULHU)
+  wire mul_signed_a = ( muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MUL
+                     || muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MULH
+                     || muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MULHSU );
+  wire mul_signed_b = ( muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MUL
+                     || muldivreq_msg_fn == `IMULDIV_MULDIVREQ_MSG_FUNC_MULH );
+
 
   //----------------------------------------------------------------------
   // Output Select
@@ -71,7 +97,9 @@ module imuldiv_IntMulDivIterative
     .mulreq_rdy         (mulreq_rdy),
     .mulresp_msg_result (mulresp_msg_result),
     .mulresp_val        (mulresp_val),
-    .mulresp_rdy        (muldivresp_rdy)
+    .mulresp_rdy        (muldivresp_rdy),
+    .mul_signed_a       (mul_signed_a),
+    .mul_signed_b       (mul_signed_b)
   );
 
   imuldiv_IntDivIterative idiv

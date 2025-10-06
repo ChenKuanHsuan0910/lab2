@@ -32,6 +32,9 @@
 `define IMULDIV_MULDIVREQ_MSG_FUNC_DIVU  3'd2
 `define IMULDIV_MULDIVREQ_MSG_FUNC_REM   3'd3
 `define IMULDIV_MULDIVREQ_MSG_FUNC_REMU  3'd4
+`define IMULDIV_MULDIVREQ_MSG_FUNC_MULH  3'd5
+`define IMULDIV_MULDIVREQ_MSG_FUNC_MULHSU 3'd6
+`define IMULDIV_MULDIVREQ_MSG_FUNC_MULHU 3'd7
 
 `define IMULDIV_MULDIVREQ_MSG_A_SZ       32
 `define IMULDIV_MULDIVREQ_MSG_B_SZ       32
@@ -111,6 +114,9 @@ module imuldiv_MulDivReqMsgToStr
   localparam divu  = `IMULDIV_MULDIVREQ_MSG_FUNC_DIVU;
   localparam rem   = `IMULDIV_MULDIVREQ_MSG_FUNC_REM;
   localparam remu  = `IMULDIV_MULDIVREQ_MSG_FUNC_REMU;
+  localparam mulh  = `IMULDIV_MULDIVREQ_MSG_FUNC_MULH;
+  localparam mulhsu= `IMULDIV_MULDIVREQ_MSG_FUNC_MULHSU;
+  localparam mulhu = `IMULDIV_MULDIVREQ_MSG_FUNC_MULHU;
 
   // Full string sized for 20 characters
 

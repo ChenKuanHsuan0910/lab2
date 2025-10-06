@@ -15,6 +15,10 @@ module imuldiv_IntMulIterative
   input         mulreq_val,
   output        mulreq_rdy,
 
+  // Signedness control per operand
+  input         mul_signed_a,
+  input         mul_signed_b,
+
   output [63:0] mulresp_msg_result,
   output        mulresp_val,
   input         mulresp_rdy
@@ -49,7 +53,9 @@ module imuldiv_IntMulIterative
     .b_mux_sel          (b_mux_sel),
     .result_mux_sel     (result_mux_sel),
     .add_mux_sel        (add_mux_sel),
-    .sign_mux_sel       (sign_mux_sel)
+    .sign_mux_sel       (sign_mux_sel),
+    .mul_signed_a       (mul_signed_a),
+    .mul_signed_b       (mul_signed_b)
   );
 
   imuldiv_IntMulIterativeCtrl ctrl
@@ -105,7 +111,9 @@ module imuldiv_IntMulIterativeDpath
   input         b_mux_sel,
   input         result_mux_sel,
   input         add_mux_sel,
-  input         sign_mux_sel
+  input         sign_mux_sel,
+  input         mul_signed_a,
+  input         mul_signed_b
 );
 
   //----------------------------------------------------------------------
@@ -139,18 +147,18 @@ module imuldiv_IntMulIterativeDpath
 
   // Sign of Result
 
-  wire   sign_next = mulreq_msg_a[31] ^ mulreq_msg_b[31];
+  wire   sign_next = (mul_signed_a & mulreq_msg_a[31]) ^ (mul_signed_b & mulreq_msg_b[31]);
 
   assign sign      = sign_reg;
 
   // Unsigned Operands
 
   wire [31:0] unsigned_a
-    = ( mulreq_msg_a[31] ) ? ~mulreq_msg_a + 1'b1
+    = ( mul_signed_a && mulreq_msg_a[31] ) ? ~mulreq_msg_a + 1'b1
     :                         mulreq_msg_a;
 
   wire [31:0] unsigned_b
-    = ( mulreq_msg_b[31] ) ? ~mulreq_msg_b + 1'b1
+    = ( mul_signed_b && mulreq_msg_b[31] ) ? ~mulreq_msg_b + 1'b1
     :                         mulreq_msg_b;
 
   // Operand Muxes
