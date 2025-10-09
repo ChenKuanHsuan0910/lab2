@@ -15,7 +15,7 @@ module imuldiv_IntMulIterative
   input         mulreq_val,
   output        mulreq_rdy,
 
-  // Signedness control per operand
+  // Per-operand signedness
   input         mul_signed_a,
   input         mul_signed_b,
 
@@ -53,9 +53,9 @@ module imuldiv_IntMulIterative
     .b_mux_sel          (b_mux_sel),
     .result_mux_sel     (result_mux_sel),
     .add_mux_sel        (add_mux_sel),
-    .sign_mux_sel       (sign_mux_sel),
-    .mul_signed_a       (mul_signed_a),
-    .mul_signed_b       (mul_signed_b)
+    .sign_mux_sel       (sign_mux_sel)
+    , .mul_signed_a       (mul_signed_a)
+      , .mul_signed_b       (mul_signed_b)
   );
 
   imuldiv_IntMulIterativeCtrl ctrl
@@ -111,9 +111,9 @@ module imuldiv_IntMulIterativeDpath
   input         b_mux_sel,
   input         result_mux_sel,
   input         add_mux_sel,
-  input         sign_mux_sel,
-  input         mul_signed_a,
-  input         mul_signed_b
+  input         sign_mux_sel
+  , input         mul_signed_a
+  , input         mul_signed_b
 );
 
   //----------------------------------------------------------------------
