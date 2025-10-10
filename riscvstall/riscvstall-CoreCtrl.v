@@ -388,12 +388,12 @@ module riscv_CoreCtrl
       `RISCV_INST_MSG_SW     :cs={ y,  n,    br_none, pm_p , am_rdat, y, bm_imm_s, y, alu_add , md_x    , n, mdm_x , em_x  , st , ml_w , dmm_w , wm_mem, n, rx, n   };
       `RISCV_INST_MSG_JAL    :cs={ y,  y,    br_none, pm_j , am_pc4 , n, bm_0    , n, alu_add , md_x    , n, mdm_x , em_alu, nr , ml_x , dmm_x , wm_alu, y, rd, n   };
       `RISCV_INST_MSG_JALR   :cs={ y,  y,    br_none, pm_r , am_pc4 , y, bm_0    , n, alu_add , md_x    , n, mdm_x , em_alu, nr , ml_x , dmm_x , wm_alu, y, rd, n   };
-      `RISCV_INST_MSG_BEQ    :cs={ y,  n,    br_beq , pm_b , am_rdat, y, bm_rdat , y,  alu_xor, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
+      `RISCV_INST_MSG_BEQ    :cs={ y,  n,    br_beq , pm_b , am_rdat, y, bm_rdat , y, alu_xor, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
+      `RISCV_INST_MSG_BGE    :cs={ y,  n,    br_bge , pm_b , am_rdat, y, bm_rdat , y, alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
+      `RISCV_INST_MSG_BGEU   :cs={ y,  n,    br_bgeu, pm_b , am_rdat, y, bm_rdat , y, alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
+      `RISCV_INST_MSG_BLTU   :cs={ y,  n,    br_bltu, pm_b , am_rdat, y, bm_rdat , y, alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
       `RISCV_INST_MSG_BNE    :cs={ y,  n,    br_bne , pm_b , am_rdat, y, bm_rdat , y,  alu_xor, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
       `RISCV_INST_MSG_BLT    :cs={ y,  n,    br_blt , pm_b , am_rdat, y, bm_rdat , y,  alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
-      `RISCV_INST_MSG_BGE    :cs={ y,  n,    br_bge , pm_b , am_rdat, y, bm_rdat , y,  alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
-      `RISCV_INST_MSG_BLTU   :cs={ y,  n,    br_bltu, pm_b , am_rdat, y, bm_rdat , y,  alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
-      `RISCV_INST_MSG_BGEU   :cs={ y,  n,    br_bgeu, pm_b , am_rdat, y, bm_rdat , y,  alu_sub, md_x    , n, mdm_x , em_x  , nr, ml_x , dmm_x , wm_x  , n, rx, n   };
       `RISCV_INST_MSG_CSRW   :cs={ y,  n,    br_none, pm_p , am_rdat, y, bm_0    , y, alu_add , md_x    , n, mdm_x , em_alu, nr , ml_x , dmm_x , wm_alu, n, rx, y   };
       `RISCV_INST_MSG_MUL    :cs={ y,  n,    br_none, pm_p , am_rdat, y, bm_rdat , y, alu_x   , md_mul  , y, mdm_l , em_md , nr , ml_x , dmm_x , wm_alu, y, rd, n   };
       `RISCV_INST_MSG_MULH   :cs={ y,  n,    br_none, pm_p , am_rdat, y, bm_rdat , y, alu_x   , md_mulh , y, mdm_u , em_md , nr , ml_x , dmm_x , wm_alu, y, rd, n   };
@@ -594,18 +594,23 @@ endcase
   assign dmemreq_msg_len = dmemreq_msg_len_Xhl;
   assign dmemreq_val     = ( inst_val_Xhl && !stall_Xhl && dmemreq_val_Xhl );
 
-  // Resolve Branch
+    // Resolve Branch
 
-  wire bne_taken_Xhl  = ( ( br_sel_Xhl == br_bne ) && branch_cond_ne_Xhl );
-  wire blt_taken_Xhl  = ( ( br_sel_Xhl == br_blt ) && branch_cond_lt_Xhl );
+  wire beq_taken_Xhl  = ( ( br_sel_Xhl == br_beq  ) && branch_cond_eq_Xhl  );
+  wire bne_taken_Xhl  = ( ( br_sel_Xhl == br_bne  ) && branch_cond_ne_Xhl  );
+  wire blt_taken_Xhl  = ( ( br_sel_Xhl == br_blt  ) && branch_cond_lt_Xhl  );
+  wire bltu_taken_Xhl = ( ( br_sel_Xhl == br_bltu ) && branch_cond_ltu_Xhl );
+  wire bge_taken_Xhl  = ( ( br_sel_Xhl == br_bge  ) && branch_cond_ge_Xhl  );
+  wire bgeu_taken_Xhl = ( ( br_sel_Xhl == br_bgeu ) && branch_cond_geu_Xhl );
 
   wire any_br_taken_Xhl
-    = ( bne_taken_Xhl || blt_taken_Xhl
-      );
+    = ( beq_taken_Xhl  || bne_taken_Xhl
+      || blt_taken_Xhl || bltu_taken_Xhl
+      || bge_taken_Xhl || bgeu_taken_Xhl );
 
   wire brj_taken_Xhl = ( inst_val_Xhl && any_br_taken_Xhl );
 
-  // Dummy Squash Signal
+// Dummy Squash Signal
 
   wire squash_Xhl = 1'b0;
 
