@@ -504,15 +504,19 @@ module riscv_CoreCtrl
   // rf_wen_Mhl and rf_waddr_Mhl are declared in the M<-X section
 
   // Determine bypass selects in D (priority X > M > W; never bypass from X if it is a load)
-  wire rs1_X_can_byp = rs1_en_Dhl && inst_val_Xhl && rf_wen_Xhl && !is_load_Xhl &&
-                       ( rs1_addr_Dhl == rf_waddr_Xhl ) && ( rf_waddr_Xhl != 5'd0 );
+  wire rs1_X_can_byp = rs1_en_Dhl && inst_val_Xhl && rf_wen_Xhl &&
+                       ( rs1_addr_Dhl == rf_waddr_Xhl ) && ( rf_waddr_Xhl != 5'd0 ) &&
+                       ( (!is_load_Xhl && !uses_muldiv_Xhl) || (uses_muldiv_Xhl && muldivresp_val) );
+
   wire rs1_M_can_byp = rs1_en_Dhl && inst_val_Mhl && rf_wen_Mhl &&
                        ( rs1_addr_Dhl == rf_waddr_Mhl ) && ( rf_waddr_Mhl != 5'd0 );
   wire rs1_W_can_byp = rs1_en_Dhl && inst_val_Whl && rf_wen_Whl &&
                        ( rs1_addr_Dhl == rf_waddr_Whl ) && ( rf_waddr_Whl != 5'd0 );
 
-  wire rs2_X_can_byp = rs2_en_Dhl && inst_val_Xhl && rf_wen_Xhl && !is_load_Xhl &&
-                       ( rs2_addr_Dhl == rf_waddr_Xhl ) && ( rf_waddr_Xhl != 5'd0 );
+  wire rs2_X_can_byp = rs2_en_Dhl && inst_val_Xhl && rf_wen_Xhl &&
+                       ( rs2_addr_Dhl == rf_waddr_Xhl ) && ( rf_waddr_Xhl != 5'd0 ) &&
+                       ( (!is_load_Xhl && !uses_muldiv_Xhl) || (uses_muldiv_Xhl && muldivresp_val) );
+
   wire rs2_M_can_byp = rs2_en_Dhl && inst_val_Mhl && rf_wen_Mhl &&
                        ( rs2_addr_Dhl == rf_waddr_Mhl ) && ( rf_waddr_Mhl != 5'd0 );
   wire rs2_W_can_byp = rs2_en_Dhl && inst_val_Whl && rf_wen_Whl &&
@@ -568,10 +572,15 @@ module riscv_CoreCtrl
   reg        csr_wen_Xhl;
   reg [11:0] csr_addr_Xhl;
 
+  // Track whether current X-stage MD instr already issued its request
+  reg        muldivreq_fired_Xhl;
+
   reg        bubble_Xhl;
 
   // Pipeline Controls
 
+  // Mul/Div producer flag for X stage: when the instruction in X uses mul/div path
+  wire uses_muldiv_Xhl = ( inst_val_Xhl && (execute_mux_sel_Xhl == 1'd1) );
   always @ ( posedge clk ) begin
     if ( reset ) begin
       bubble_Xhl <= 1'b1;
@@ -608,10 +617,10 @@ module riscv_CoreCtrl
 
   wire inst_val_Xhl = ( !bubble_Xhl && !squash_Xhl );
 
-  // Muldiv request
-
-  assign muldivreq_val = muldivreq_val_Xhl && inst_val_Xhl;
-  assign muldivresp_rdy = !stall_Xhl;
+  // Muldiv request (fire once per X-stage instruction)
+  wire want_muldiv_req = muldivreq_val_Xhl && inst_val_Xhl;
+  assign muldivreq_val = want_muldiv_req && !muldivreq_fired_Xhl;
+  assign muldivresp_rdy = 1'b1;
 
   // Only send a valid dmem request if not stalled
 
@@ -619,7 +628,7 @@ module riscv_CoreCtrl
   assign dmemreq_msg_len = dmemreq_msg_len_Xhl;
   assign dmemreq_val     = ( inst_val_Xhl && !stall_Xhl && dmemreq_val_Xhl );
 
-    // Resolve Branch
+  // Resolve Branch
 
   wire beq_taken_Xhl  = ( ( br_sel_Xhl == br_beq  ) && branch_cond_eq_Xhl  );
   wire bne_taken_Xhl  = ( ( br_sel_Xhl == br_bne  ) && branch_cond_ne_Xhl  );
@@ -635,7 +644,7 @@ module riscv_CoreCtrl
 
   wire brj_taken_Xhl = ( inst_val_Xhl && any_br_taken_Xhl );
 
-// Dummy Squash Signal
+  // Dummy Squash Signal
 
   wire squash_Xhl = 1'b0;
 
@@ -894,6 +903,20 @@ module riscv_CoreCtrl
   end
 
   `endif
+
+  // Single-writer logic for muldivreq_fired_Xhl:
+  // - Clear when a new instruction enters X (!stall_Xhl).
+  // - Set once when we actually issue the request (one-cycle pulse gating muldivreq_val).
+  always @ (posedge clk) begin
+    if (reset) begin
+      muldivreq_fired_Xhl <= 1'b0;
+    end else if (!stall_Xhl) begin
+      // New instruction latched into X: clear fired flag
+      muldivreq_fired_Xhl <= 1'b0;
+    end else if (want_muldiv_req && !muldivreq_fired_Xhl) begin
+      muldivreq_fired_Xhl <= 1'b1;
+    end
+  end
 
 endmodule
 

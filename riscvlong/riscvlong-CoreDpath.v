@@ -5,7 +5,7 @@
 `ifndef RISCV_CORE_DPATH_V
 `define RISCV_CORE_DPATH_V
 
-`include "imuldiv-IntMulDivIterative.v"
+`include "riscvlong-CoreDpathPipeMulDiv.v"
 `include "riscvlong-InstMsg.v"
 `include "riscvlong-CoreDpathAlu.v"
 `include "riscvlong-CoreDpathRegfile.v"
@@ -447,18 +447,27 @@ module riscv_CoreDpath
 
   // Multiplier/Divider
 
-  imuldiv_IntMulDivIterative imuldiv
+  
+  // [Lab2 3.6] Replace iterative mul/div with functional 4-stage pipelined unit
+  riscv_CoreDpathPipeMulDiv pipemuldiv
   (
     .clk                   (clk),
     .reset                 (reset),
+
     .muldivreq_msg_fn      (muldivreq_msg_fn_Xhl),
     .muldivreq_msg_a       (op0_mux_out_Xhl),
     .muldivreq_msg_b       (op1_mux_out_Xhl),
     .muldivreq_val         (muldivreq_val),
     .muldivreq_rdy         (muldivreq_rdy),
+
     .muldivresp_msg_result (muldivresp_msg_result_Xhl),
     .muldivresp_val        (muldivresp_val),
-    .muldivresp_rdy        (muldivresp_rdy)
+    .muldivresp_rdy        (muldivresp_rdy),
+
+    .stall_Xhl             (stall_Xhl),
+    .stall_Mhl             (stall_Mhl),
+    .stall_X2hl            (1'b0),
+    .stall_X3hl            (1'b0)
   );
 
 endmodule

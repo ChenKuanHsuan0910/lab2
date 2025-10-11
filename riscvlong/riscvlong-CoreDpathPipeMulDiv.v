@@ -1,164 +1,195 @@
 //========================================================================
-// Functional Pipelined Mul/Div Unit
+// Functional 4-Stage Pipelined Mul/Div Unit (RV32M subset)
+// - Stage0: latch request (a,b,fn) when req_val && req_rdy
+// - Stage1: perform operation with RV32M corner cases
+// - Stage2/3: pipeline dummies
+// - No internal bypass
+// - External pipeline may stall us via stall_Xhl/Mhl/X2hl/X3hl
+// - Backpressure supported via resp_rdy (hold pipeline when output not consumed)
 //========================================================================
 
 `ifndef RISCV_PIPE_MULDIV_ITERATIVE_V
 `define RISCV_PIPE_MULDIV_ITERATIVE_V
-
-`include "imuldiv-MulDivReqMsg.v"
 
 module riscv_CoreDpathPipeMulDiv
 (
   input         clk,
   input         reset,
 
+  // request
   input   [2:0] muldivreq_msg_fn,
   input  [31:0] muldivreq_msg_a,
   input  [31:0] muldivreq_msg_b,
   input         muldivreq_val,
   output        muldivreq_rdy,
 
+  // response
   output [63:0] muldivresp_msg_result,
   output        muldivresp_val,
   input         muldivresp_rdy,
-  //These need to be hooked up to something!
+
+  // external stalls to align with 5-stage core
   input         stall_Xhl,
   input         stall_Mhl,
   input         stall_X2hl,
   input         stall_X3hl
 );
 
-  // Set request ready if not stalled
+  // Function code mapping (adjust if your control uses different codes)
+  localparam MD_MUL    = 3'd0;
+  localparam MD_DIV    = 3'd1;
+  localparam MD_DIVU   = 3'd2;
+  localparam MD_REM    = 3'd3;
+  localparam MD_REMU   = 3'd4;
+  localparam MD_MULH   = 3'd5;
+  localparam MD_MULHSU = 3'd6;
+  localparam MD_MULHU  = 3'd7;
 
-  assign muldivreq_rdy = !stall;
-  wire   muldivreq_go  = muldivreq_val && muldivreq_rdy;
+  // Hold when any external stall is asserted or when output cannot be consumed
+  wire pipeline_stall = (val3 & ~muldivresp_rdy);
 
-  //----------------------------------------------------------------------
-  // Input Registers
-  //----------------------------------------------------------------------
+  // Ready to accept a new request when we are not stalling this cycle
+  assign muldivreq_rdy = ~pipeline_stall;
 
-  reg  [2:0] fn_reg;
-  reg [31:0] a_reg;
-  reg [31:0] b_reg;
-  reg [63:0] result1_reg;
-  reg [63:0] result2_reg;
-  reg [63:0] result3_reg;
-  
-  reg        val0_reg;
-  reg        val1_reg;
-  reg        val2_reg;
-  reg        val3_reg;
-  wire val1_next = (stall_Xhl) ? 1'b0: (val0_reg);
-  wire val2_next = (stall_Mhl) ? 1'b0: (val1_reg);
- 
-  always @ ( posedge clk ) begin
-    if ( reset ) begin
-      fn_reg <= 0;
-      a_reg <= 0;
-      b_reg <= 0;
-      val0_reg <= 0;
-      result1_reg <= 0;
-      result2_reg <= 0;
-      result3_reg <= 0;
-  
-      val0_reg <= 0;
-      val1_reg <= 0;
-      val2_reg <= 0;
-      val3_reg <= 0;
-    end else begin
-      if ( muldivreq_go ) begin
-        fn_reg   <= muldivreq_msg_fn;
-        a_reg    <= muldivreq_msg_a;
-        b_reg    <= muldivreq_msg_b;
-        val0_reg <= 1'b1;
-      end else if (!stall_Xhl) begin
-        val0_reg <= 1'b0;
-      end
-      if (! stall_Mhl) begin
-          result1_reg <= result0;
-          val1_reg <= val1_next;
-      end
-      if ( !stall  ) begin
-        result2_reg <= result1_reg;
-        result3_reg <= result2_reg;
-        val2_reg    <= val2_next;
-        val3_reg    <= val2_reg;
+  // -----------------------------
+  // Stage 0 regs
+  // -----------------------------
+  reg  [2:0] fn0;
+  reg [31:0] a0, b0;
+  reg        val0;
+
+  // -----------------------------
+  // Stage 1 regs (compute result here)
+  // -----------------------------
+  reg [63:0] res1;
+  reg  [2:0] fn1;
+  reg        val1;
+
+  // -----------------------------
+  // Stage 2 regs
+  // -----------------------------
+  reg [63:0] res2;
+  reg        val2;
+
+  // -----------------------------
+  // Stage 3 regs (output stage)
+  // -----------------------------
+  reg [63:0] res3;
+  reg        val3;
+
+  // Stage 0: enqueue
+  always @(posedge clk) begin
+    if (reset) begin
+      fn0  <= 3'b000;
+      a0   <= 32'b0;
+      b0   <= 32'b0;
+      val0 <= 1'b0;
+    end else if (!pipeline_stall) begin
+      if (muldivreq_val && muldivreq_rdy) begin
+        fn0  <= muldivreq_msg_fn;
+        a0   <= muldivreq_msg_a;
+        b0   <= muldivreq_msg_b;
+        val0 <= 1'b1;
+      end else begin
+        // bubble if nothing comes in and we are advancing
+        val0 <= 1'b0;
       end
     end
   end
-  
 
- 
-  //----------------------------------------------------------------------
-  // Functional Computation
-  //----------------------------------------------------------------------
+  // Common wires for Stage1 math
+  wire signed [31:0] a_s = a0;
+  wire signed [31:0] b_s = b0;
+  wire        [31:0] a_u = a0;
+  wire        [31:0] b_u = b0;
 
-  // Sign of mul and div
+  wire div_by_zero     = (b0 == 32'b0);
+  wire is_signed_div   = (fn0 == MD_DIV) || (fn0 == MD_REM);
+  wire signed_overflow = is_signed_div && (a0 == 32'h8000_0000) && (b0 == 32'hFFFF_FFFF);
 
-  wire sign = ( a_reg[31] ^ b_reg[31] );
+  wire signed [63:0] prod_ss = $signed({{32{a0[31]}},a0}) * $signed({{32{b0[31]}},b0});
+  wire        [63:0] prod_uu = {32'b0,a0} * {32'b0,b0};
+  wire signed [63:0] prod_su = $signed({{32{a0[31]}},a0}) * $signed({32'b0,b0});
+  // Helper absolute values for robust signed DIV/REM
+  wire        a_neg = a0[31];
+  wire        b_neg = b0[31];
+  wire [31:0] abs_a = a_neg ? (~a0 + 1'b1) : a0;
+  wire [31:0] abs_b = b_neg ? (~b0 + 1'b1) : b0;
 
-  // Unsigned operands
+  wire [31:0] quot_abs = (abs_b == 0) ? 32'd0 : (abs_a / abs_b);
+  wire [31:0] rem_abs  = (abs_b == 0) ? abs_a : (abs_a % abs_b);
 
-  wire [31:0] a_unsign   = ( a_reg[31] == 1'b1 ) ? ( ~a_reg + 1'b1 )
-                         :                         a_reg;
-  wire [31:0] b_unsign   = ( b_reg[31] == 1'b1 ) ? ( ~b_reg + 1'b1 )
-                         :                         b_reg;
+  wire [31:0] quot_sgn = (a_neg ^ b_neg) ? (~quot_abs + 1'b1) : quot_abs;
+  wire [31:0] rem_sgn  = (a_neg)         ? (~rem_abs  + 1'b1) : rem_abs;
 
-  // Unsigned computation
 
-  wire [31:0] quotientu  = a_reg / b_reg;
-  wire [31:0] remainderu = a_reg % b_reg;
+  // Stage 1: compute
+  always @(posedge clk) begin
+    if (reset) begin
+      res1 <= 64'b0;
+      fn1  <= 3'b000;
+      val1 <= 1'b0;
+    end else if (!pipeline_stall) begin
+      fn1  <= fn0;
+      val1 <= val0;
+      case (fn0)
+        MD_MUL   : res1 <= { prod_uu[63:32], prod_uu[31:0] };
+        MD_MULH  : res1 <= { prod_ss[63:32], 32'b0 };
+        MD_MULHSU: res1 <= { prod_su[63:32], 32'b0 };
+        MD_MULHU : res1 <= { prod_uu[63:32], 32'b0 };
 
-  // Signed computation
+        MD_DIV   : begin
+          if (div_by_zero)        res1 <= { 32'b0, 32'hFFFF_FFFF };
+          else if (signed_overflow) res1 <= { 32'b0, 32'h8000_0000 };
+          else                    res1 <= { 32'b0, quot_sgn };
+        end
 
-  wire [63:0] product_raw   = a_unsign * b_unsign;
-  wire [31:0] quotient_raw  = a_unsign / b_unsign;
-  wire [31:0] remainder_raw = a_unsign % b_unsign;
+        MD_DIVU  : begin
+          if (div_by_zero)        res1 <= { 32'b0, 32'hFFFF_FFFF };
+          else                    res1 <= { 32'b0, (a_u / b_u) };
+        end
 
-  // Signed Product
+        MD_REM   : begin
+          if (div_by_zero)        res1 <= { a0, 32'b0 };
+          else if (signed_overflow) res1 <= { 32'h0000_0000, 32'b0 };
+          else                    res1 <= { rem_sgn, 32'b0 };
+        end
 
-  wire [63:0] product
-    = ( sign ) ? ( ~product_raw + 1'b1 )
-               : product_raw;
+        MD_REMU  : begin
+          if (div_by_zero)        res1 <= { a0, 32'b0 };
+          else                    res1 <= { (a_u % b_u), 32'b0 };
+        end
 
-  // Signed Quotient
+        default  : res1 <= 64'b0;
+      endcase
+    end
+  end
 
-  wire [31:0] quotient
-    = ( sign ) ? ( ~quotient_raw + 1'b1 )
-               : quotient_raw;
+  // Stage 2
+  always @(posedge clk) begin
+    if (reset) begin
+      res2 <= 64'b0;
+      val2 <= 1'b0;
+    end else if (!pipeline_stall) begin
+      res2 <= res1;
+      val2 <= val1;
+    end
+  end
 
-  // Remainder is same sign as dividend
+  // Stage 3
+  always @(posedge clk) begin
+    if (reset) begin
+      res3 <= 64'b0;
+      val3 <= 1'b0;
+    end else if (!pipeline_stall) begin
+      res3 <= res2;
+      val3 <= val2;
+    end
+  end
 
-  wire [31:0] remainder
-    = ( a_reg[31] ) ? ( ~remainder_raw + 1'b1 )
-    :                 remainder_raw;
-
-  // Result mux
-
-  wire [63:0] result0
-    = ( fn_reg == `IMULDIV_MULDIVREQ_MSG_FUNC_MUL  ) ? product
-    : ( fn_reg == `IMULDIV_MULDIVREQ_MSG_FUNC_DIV  ) ? { remainder, quotient }
-    : ( fn_reg == `IMULDIV_MULDIVREQ_MSG_FUNC_DIVU ) ? { remainderu, quotientu }
-    : ( fn_reg == `IMULDIV_MULDIVREQ_MSG_FUNC_REM  ) ? { remainder, quotient }
-    : ( fn_reg == `IMULDIV_MULDIVREQ_MSG_FUNC_REMU ) ? { remainderu, quotientu }
-    :                                                  32'bx;
-
-  //----------------------------------------------------------------------
-  // Dummy Pipeline Stages
-  //----------------------------------------------------------------------
-
-  
-  // Set response data
-
-  assign muldivresp_msg_result = result3_reg;
-
-  // Set response valid
-
-  assign muldivresp_val = val3_reg;
-
-  // Stall signal
-
-  wire stall = val3_reg && !muldivresp_rdy;
+  // Response
+  assign muldivresp_msg_result = res3;
+  assign muldivresp_val        = val3;
 
 endmodule
 
